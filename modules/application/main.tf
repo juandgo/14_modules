@@ -34,6 +34,7 @@ resource "aws_launch_template" "this" {
               TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
               INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
               AVAILABILITY_ZONE=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
+              INSTANCE_UUID=$(cat /proc/sys/kernel/random/uuid)
 
               cat <<HTML > /var/www/html/index.html
               <!DOCTYPE html>
@@ -42,6 +43,7 @@ resource "aws_launch_template" "this" {
               <body>
                 <h1>Hello from EC2!</h1>
                 <p><strong>Instance ID:</strong> $INSTANCE_ID</p>
+                <p><strong>UUID:</strong> $INSTANCE_UUID</p>
                 <p><strong>Availability Zone:</strong> $AVAILABILITY_ZONE</p>
               </body>
               </html>
@@ -79,7 +81,7 @@ resource "aws_lb_target_group" "this" {
     path                = "/"
     protocol            = "HTTP"
     matcher             = "200"
-    interval            = 30
+    interval            = 15
     timeout             = 5
     healthy_threshold   = 2
     unhealthy_threshold = 2
@@ -105,6 +107,7 @@ resource "aws_lb_listener" "http" {
 resource "aws_autoscaling_group" "this" {
   name                = "${var.prefix}-asg"
   vpc_zone_identifier = var.public_subnet_ids
+  target_group_arns   = [aws_lb_target_group.this.arn]
 
   desired_capacity = 2
   min_size         = 2
@@ -113,10 +116,6 @@ resource "aws_autoscaling_group" "this" {
   launch_template {
     id      = aws_launch_template.this.id
     version = "$Latest"
-  }
-
-  lifecycle {
-    ignore_changes = [load_balancers, target_group_arns]
   }
 
   tag {
